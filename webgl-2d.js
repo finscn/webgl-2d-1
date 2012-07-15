@@ -43,6 +43,21 @@
  */
 
 (function(Math, undefined) {
+  // hijack createElement to return webgl-enabled canvas
+  var _createElement = (function (_origCreateElement) {
+    return function (elem) {
+      return _origCreateElement.call(document, elem);
+    };
+  })(document.createElement);
+  document.createElement = function (elem) {
+    if (elem.toLowerCase() === "canvas") {
+      var e = _createElement(elem);
+      WebGL2D.enable(e, {force:true});
+      return e;
+    } else {
+      return _createElement(elem);
+    }
+  };
 
   // Vector & Matrix libraries from CubicVR.js
   var M_PI = 3.1415926535897932384626433832795028841968;
@@ -520,7 +535,7 @@
 
 
     // Rendering Canvas for text fonts
-    var textCanvas    = document.createElement("canvas");
+    var textCanvas    = _createElement("canvas");
     textCanvas.width  = gl2d.canvas.width;
     textCanvas.height = gl2d.canvas.height;
     var textCtx       = textCanvas.getContext("2d");
@@ -983,7 +998,7 @@
 
     gl.measureText = function measureText(text) { return textCtx.measureText(text); };
 
-    var tempCanvas = document.createElement('canvas');
+    var tempCanvas = _createElement('canvas');
     var tempCtx = tempCanvas.getContext('2d');
 
     gl.save = function save() {
@@ -1251,7 +1266,7 @@
       // we may wish to consider tiling large images like this instead of scaling and
       // adjust appropriately (flip to next texture source and tile offset) when drawing
       if (image.width > gl2d.maxTextureSize || image.height > gl2d.maxTextureSize) {
-        var canvas = document.createElement("canvas");
+        var canvas = _createElement("canvas");
 
         canvas.width  = (image.width  > gl2d.maxTextureSize) ? gl2d.maxTextureSize : image.width;
         canvas.height = (image.height > gl2d.maxTextureSize) ? gl2d.maxTextureSize : image.height;
