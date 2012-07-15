@@ -1123,7 +1123,10 @@
       transform.popMatrix();
     };
 
-    gl.clearRect = function clearRect(x, y, width, height) {};
+    gl.clearRect = function clearRect(x, y, width, height) {
+      drawState.fillStyle = [1, 1, 1, 1];
+      gl.fillRect(x, y, width, height);
+    };
 
     var subPaths = [];
 
