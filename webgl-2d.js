@@ -373,12 +373,12 @@
     var vsSource = [
       "#define hasTexture " + ((sMask&shaderMask.texture) ? "1" : "0"),
       "attribute vec4 aVertexPosition;",
+      "attribute vec4 aVertexColor;",
 
       "#if hasTexture",
       "varying vec2 vTextureCoord;",
       "#endif",
 
-      "uniform vec4 uColor;",
       "uniform mat3 uTransforms[" + stackDepth + "];",
 
       "varying vec4 vColor;",
@@ -396,7 +396,7 @@
       "void main(void) {",
         "vec3 position = crunchStack() * vec3(aVertexPosition.x, aVertexPosition.y, 1.0);",
         "gl_Position = pMatrix * vec4(position, 1.0);",
-        "vColor = uColor;",
+        "vColor = aVertexColor;",
         "#if hasTexture",
           "vTextureCoord = aVertexPosition.zw;",
         "#endif",
@@ -454,7 +454,9 @@
       shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
       gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
 
-      shaderProgram.uColor   = gl.getUniformLocation(shaderProgram, 'uColor');
+      shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, "aVertexColor");
+      gl.enableVertexAttribArray(shaderProgram.vertexColorAttribute);
+
       shaderProgram.uSampler = gl.getUniformLocation(shaderProgram, 'uSampler');
       shaderProgram.uCropSource = gl.getUniformLocation(shaderProgram, 'uCropSource');
 
@@ -481,6 +483,13 @@
       1,0, 1,0
   ]);
 
+  var rectColors = new Float32Array([
+    1, 1, 1, 1,
+    1, 1, 1, 1,
+    1, 1, 1, 1,
+    1, 1, 1, 1
+  ]);
+
   WebGL2D.prototype.initBuffers = function initBuffers() {
     var gl = this.gl;
 
@@ -492,6 +501,9 @@
 
     gl.bindBuffer(gl.ARRAY_BUFFER, rectVertexPositionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, rectVerts, gl.STATIC_DRAW);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, rectVertexColorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, rectColors, gl.STATIC_DRAW);
   };
 
   // Maintains an array of all WebGL2D instances
@@ -608,6 +620,24 @@
 
       return result;
     }
+
+    function Gradient() {
+      this.cs = [[1, 1, 1, 1], [1, 1, 1, 1]];
+    }
+    Gradient.prototype.addColorStop = function (offset, value) {
+      offset = parseInt(offset);
+      if (0 === offset || 1 === offset) {
+        this.cs[offset] = colorStringToVec4(value) || this.cs[offset];
+      }
+    };
+    Gradient.prototype.setVertexColors = function (cs, gl, shaderProgram) {
+      var colors = new Float32Array(cs[0].concat(cs[0]).concat(cs[1]).concat(cs[1]));
+      gl.bindBuffer(gl.ARRAY_BUFFER, rectVertexColorBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, rectVertexColorBuffer);
+      gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, 4, gl.FLOAT, false, 0, 0);
+    };
 
     function colorVecToString(vec4) {
       return "rgba(" + (vec4[0] * 255) + ", " + (vec4[1] * 255) + ", " + (vec4[2] * 255) + ", " + parseFloat(vec4[3]) + ")";
@@ -804,9 +834,13 @@
     drawState.fillStyle = [0, 0, 0, 1]; // default black
 
     Object.defineProperty(gl, "fillStyle", {
-      get: function() { return colorVecToString(drawState.fillStyle); },
+      get: function() {
+        if (drawState.fillStyle instanceof Gradient) return drawState.fillStyle;
+        else return colorVecToString(drawState.fillStyle);
+      },
       set: function(value) {
-        drawState.fillStyle = colorStringToVec4(value) || drawState.fillStyle;
+        if (value instanceof Gradient) drawState.fillStyle = value;
+        else drawState.fillStyle = colorStringToVec4(value) || drawState.fillStyle;
       }
     });
 
@@ -946,13 +980,11 @@
 
     // Need a solution for drawing text that isnt stupid slow
     gl.fillText = function fillText(text, x, y) {
-      /*
       textCtx.clearRect(0, 0, gl2d.canvas.width, gl2d.canvas.height);
       textCtx.fillStyle = gl.fillStyle;
       textCtx.fillText(text, x, y);
 
       gl.drawImage(textCanvas, 0, 0);
-      */
     };
 
     gl.strokeText = function strokeText() {};
@@ -1034,6 +1066,10 @@
       gl.transform.apply(this, arguments);
     };
 
+    gl.createLinearGradient = function (x, y, width, height) {
+      return new Gradient();
+    };
+
     gl.fillRect = function fillRect(x, y, width, height) {
       var transform = gl2d.transform;
       var shaderProgram = gl2d.initShaders(transform.c_stack+2,0);
@@ -1048,7 +1084,11 @@
 
       sendTransformStack(shaderProgram);
 
-      gl.uniform4f(shaderProgram.uColor, drawState.fillStyle[0], drawState.fillStyle[1], drawState.fillStyle[2], drawState.fillStyle[3]);
+      if (drawState.fillStyle instanceof Gradient) {
+        Gradient.prototype.setVertexColors.call(this, drawState.fillStyle.cs, gl, shaderProgram);
+      } else {
+        Gradient.prototype.setVertexColors.call(this, [drawState.fillStyle, drawState.fillStyle], gl, shaderProgram);
+      }
 
       gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
 
@@ -1069,7 +1109,7 @@
 
       sendTransformStack(shaderProgram);
 
-      gl.uniform4f(shaderProgram.uColor, drawState.strokeStyle[0], drawState.strokeStyle[1], drawState.strokeStyle[2], drawState.strokeStyle[3]);
+      Gradient.prototype.setVertexColors.call(this, [drawState.fillStyle, drawState.fillStyle], gl, shaderProgram);
 
       gl.drawArrays(gl.LINE_LOOP, 0, 4);
 
@@ -1150,7 +1190,7 @@
 
       sendTransformStack(shaderProgram);
 
-      gl.uniform4f(shaderProgram.uColor, drawState.fillStyle[0], drawState.fillStyle[1], drawState.fillStyle[2], drawState.fillStyle[3]);
+      Gradient.prototype.setVertexColors.call(this, [drawState.fillStyle, drawState.fillStyle], gl, shaderProgram);
 
       gl.drawArrays(gl.TRIANGLE_FAN, 0, verts.length/4);
 
@@ -1179,7 +1219,7 @@
 
       sendTransformStack(shaderProgram);
 
-      gl.uniform4f(shaderProgram.uColor, drawState.strokeStyle[0], drawState.strokeStyle[1], drawState.strokeStyle[2], drawState.strokeStyle[3]);
+      Gradient.prototype.setVertexColors.call(this, [drawState.fillStyle, drawState.fillStyle], gl, shaderProgram);
 
       if (subPath.closed) {
         gl.drawArrays(gl.LINE_LOOP, 0, verts.length/4);
