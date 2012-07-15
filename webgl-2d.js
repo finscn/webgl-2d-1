@@ -630,14 +630,6 @@
         this.cs[offset] = colorStringToVec4(value) || this.cs[offset];
       }
     };
-    Gradient.prototype.setVertexColors = function (cs, gl, shaderProgram) {
-      var colors = new Float32Array(cs[0].concat(cs[0]).concat(cs[1]).concat(cs[1]));
-      gl.bindBuffer(gl.ARRAY_BUFFER, rectVertexColorBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
-
-      gl.bindBuffer(gl.ARRAY_BUFFER, rectVertexColorBuffer);
-      gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, 4, gl.FLOAT, false, 0, 0);
-    };
 
     function colorVecToString(vec4) {
       return "rgba(" + (vec4[0] * 255) + ", " + (vec4[1] * 255) + ", " + (vec4[2] * 255) + ", " + parseFloat(vec4[3]) + ")";
@@ -1070,6 +1062,17 @@
       return new Gradient();
     };
 
+    gl.setVertexColors = function (shaderProgram) {
+      var cs = (drawState.fillStyle instanceof Gradient ? drawState.fillStyle.cs : [drawState.fillStyle, drawState.fillStyle]);
+      var colors = new Float32Array(cs[0].concat(cs[0]).concat(cs[1]).concat(cs[1]));
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, rectVertexColorBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, rectVertexColorBuffer);
+      gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, 4, gl.FLOAT, false, 0, 0);
+    };
+
     gl.fillRect = function fillRect(x, y, width, height) {
       var transform = gl2d.transform;
       var shaderProgram = gl2d.initShaders(transform.c_stack+2,0);
@@ -1084,12 +1087,7 @@
 
       sendTransformStack(shaderProgram);
 
-      if (drawState.fillStyle instanceof Gradient) {
-        Gradient.prototype.setVertexColors.call(this, drawState.fillStyle.cs, gl, shaderProgram);
-      } else {
-        Gradient.prototype.setVertexColors.call(this, [drawState.fillStyle, drawState.fillStyle], gl, shaderProgram);
-      }
-
+      gl.setVertexColors(shaderProgram);
       gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
 
       transform.popMatrix();
@@ -1109,8 +1107,7 @@
 
       sendTransformStack(shaderProgram);
 
-      Gradient.prototype.setVertexColors.call(this, [drawState.fillStyle, drawState.fillStyle], gl, shaderProgram);
-
+      gl.setVertexColors(shaderProgram);
       gl.drawArrays(gl.LINE_LOOP, 0, 4);
 
       transform.popMatrix();
@@ -1190,8 +1187,7 @@
 
       sendTransformStack(shaderProgram);
 
-      Gradient.prototype.setVertexColors.call(this, [drawState.fillStyle, drawState.fillStyle], gl, shaderProgram);
-
+      gl.setVertexColors(shaderProgram);
       gl.drawArrays(gl.TRIANGLE_FAN, 0, verts.length/4);
 
       transform.popMatrix();
@@ -1219,7 +1215,7 @@
 
       sendTransformStack(shaderProgram);
 
-      Gradient.prototype.setVertexColors.call(this, [drawState.fillStyle, drawState.fillStyle], gl, shaderProgram);
+      gl.setVertexColors(shaderProgram);
 
       if (subPath.closed) {
         gl.drawArrays(gl.LINE_LOOP, 0, verts.length/4);
