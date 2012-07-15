@@ -1342,7 +1342,7 @@
       gl.uniform1i(shaderProgram.uSampler, 0);
 
       sendTransformStack(shaderProgram);
-      gl.setVertexColors(shaderProgram, true);
+      gl.setVertexColors(shaderProgram);
       gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
 
       transform.popMatrix();
