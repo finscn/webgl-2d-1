@@ -1071,8 +1071,9 @@
       return new Gradient();
     };
 
-    gl.setVertexColors = function (shaderProgram) {
-      var cs = (drawState.fillStyle instanceof Gradient ? drawState.fillStyle.cs : [drawState.fillStyle, drawState.fillStyle]);
+    gl.setVertexColors = function (shaderProgram, isStroke) {
+      var cs = (isStroke ? [drawState.strokeStyle, drawState.strokeStyle] :
+          drawState.fillStyle instanceof Gradient ? drawState.fillStyle.cs : [drawState.fillStyle, drawState.fillStyle]);
       var colors = new Float32Array(cs[0].concat(cs[0]).concat(cs[1]).concat(cs[1]));
 
       gl.bindBuffer(gl.ARRAY_BUFFER, gl.rectVertexColorBuffer);
@@ -1116,7 +1117,7 @@
 
       sendTransformStack(shaderProgram);
 
-      gl.setVertexColors(shaderProgram);
+      gl.setVertexColors(shaderProgram, true);
       gl.drawArrays(gl.LINE_LOOP, 0, 4);
 
       transform.popMatrix();
@@ -1224,7 +1225,7 @@
 
       sendTransformStack(shaderProgram);
 
-      gl.setVertexColors(shaderProgram);
+      gl.setVertexColors(shaderProgram, true);
 
       if (subPath.closed) {
         gl.drawArrays(gl.LINE_LOOP, 0, verts.length/4);
@@ -1341,6 +1342,7 @@
       gl.uniform1i(shaderProgram.uSampler, 0);
 
       sendTransformStack(shaderProgram);
+      gl.setVertexColors(shaderProgram, true);
       gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
 
       transform.popMatrix();
