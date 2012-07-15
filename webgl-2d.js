@@ -989,7 +989,7 @@
 
     gl.strokeText = function strokeText() {};
 
-    gl.measureText = function measureText() { return 1; };
+    gl.measureText = function measureText(text) { return textCtx.measureText(text); };
 
     var tempCanvas = document.createElement('canvas');
     var tempCtx = tempCanvas.getContext('2d');
