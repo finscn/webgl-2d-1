@@ -316,7 +316,7 @@
 
           // Blending options
           gl.enable(gl.BLEND);
-          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
           gl2d.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
 
@@ -366,10 +366,11 @@
 
       "void main(void) {",
         "#if hasTexture",
+          "vec4 mulColor = vec4(vColor.r * vColor.a, vColor.g * vColor.a, vColor.b * vColor.a, vColor.a);",
           "#if hasCrop",
-            "gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.x * uCropSource.z, vTextureCoord.y * uCropSource.w) + uCropSource.xy);",
+            "gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.x * uCropSource.z, vTextureCoord.y * uCropSource.w) + uCropSource.xy); * mulColor",
           "#else",
-            "gl_FragColor = texture2D(uSampler, vTextureCoord);",
+            "gl_FragColor = texture2D(uSampler, vTextureCoord); * mulColor",
           "#endif",
         "#else",
           "gl_FragColor = vColor;",
@@ -388,12 +389,12 @@
     var vsSource = [
       "#define hasTexture " + ((sMask&shaderMask.texture) ? "1" : "0"),
       "attribute vec4 aVertexPosition;",
-      "attribute vec4 aVertexColor;",
 
       "#if hasTexture",
       "varying vec2 vTextureCoord;",
       "#endif",
 
+      "uniform vec4 uColor;",
       "uniform mat3 uTransforms[" + stackDepth + "];",
 
       "varying vec4 vColor;",
@@ -411,7 +412,7 @@
       "void main(void) {",
         "vec3 position = crunchStack() * vec3(aVertexPosition.x, aVertexPosition.y, 1.0);",
         "gl_Position = pMatrix * vec4(position, 1.0);",
-        "vColor = aVertexColor;",
+        "vColor = uColor;",
         "#if hasTexture",
           "vTextureCoord = aVertexPosition.zw;",
         "#endif",
@@ -469,9 +470,7 @@
       shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
       gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
 
-      shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, "aVertexColor");
-      gl.enableVertexAttribArray(shaderProgram.vertexColorAttribute);
-
+      shaderProgram.uColor   = gl.getUniformLocation(shaderProgram, 'uColor');
       shaderProgram.uSampler = gl.getUniformLocation(shaderProgram, 'uSampler');
       shaderProgram.uCropSource = gl.getUniformLocation(shaderProgram, 'uCropSource');
 
@@ -850,7 +849,7 @@
     Object.defineProperty(gl, "strokeStyle", {
       get: function() { return colorVecToString(drawState.strokeStyle); },
       set: function(value) {
-        drawState.strokeStyle = colorStringToVec4(value) || drawStyle.strokeStyle;
+        drawState.strokeStyle = colorStringToVec4(value) || drawState.strokeStyle;
       }
     });
 
@@ -1062,6 +1061,43 @@
       } //for
     }
 
+    var warnedBlendModes = {};
+
+    function updateBlendMode () {
+
+      switch (drawState.globalCompositeOperation) {
+	    case "source-over":
+		  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+		  break;
+		case "lighter":
+		  gl.blendFunc(gl.ONE, gl.ONE);
+		  break;
+		case "copy":
+		  gl.blendFunc(gl.ONE, gl.ZERO);
+		  break;
+		default:
+		  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+		  if (!warnedBlendModes[drawState.globalCompositeOperation]) {
+		    console.warn("Blend mode '" + drawState.globalCompositeOperation + "' not implemented by webgl-2d.");
+			warnedBlendModes[drawState.globalCompositeOperation] = true;
+		  }
+
+	  }
+
+	};
+
+    function updateColorPremultiplied = function(shaderProgram, colorUnpremultiplied) {
+
+      gl.uniform4f(
+	    shaderProgram.uColor,
+		colorUnpremultiplied[0] * colorUnpremultiplied[3],
+		colorUnpremultiplied[1] * colorUnpremultiplied[3],
+		colorUnpremultiplied[2] * colorUnpremultiplied[3],
+		colorUnpremultiplied[3]
+	  );
+
+	};
+
     gl.setTransform = function setTransform(m11, m12, m21, m22, dx, dy) {
       gl2d.transform.setIdentity();
       gl.transform.apply(this, arguments);
@@ -1069,18 +1105,6 @@
 
     gl.createLinearGradient = function (x, y, width, height) {
       return new Gradient();
-    };
-
-    gl.setVertexColors = function (shaderProgram, isStroke) {
-      var cs = (isStroke ? [drawState.strokeStyle, drawState.strokeStyle] :
-          drawState.fillStyle instanceof Gradient ? drawState.fillStyle.cs : [drawState.fillStyle, drawState.fillStyle]);
-      var colors = new Float32Array(cs[0].concat(cs[0]).concat(cs[1]).concat(cs[1]));
-
-      gl.bindBuffer(gl.ARRAY_BUFFER, gl.rectVertexColorBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
-
-      gl.bindBuffer(gl.ARRAY_BUFFER, gl.rectVertexColorBuffer);
-      gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, 4, gl.FLOAT, false, 0, 0);
     };
 
     gl.fillRect = function fillRect(x, y, width, height) {
@@ -1097,7 +1121,9 @@
 
       sendTransformStack(shaderProgram);
 
-      gl.setVertexColors(shaderProgram);
+      updateBlendMode();
+      updateColorPremultiplied(shaderProgram, drawState.fillStyle);
+
       gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
 
       transform.popMatrix();
@@ -1117,7 +1143,9 @@
 
       sendTransformStack(shaderProgram);
 
-      gl.setVertexColors(shaderProgram, true);
+      updateBlendMode();
+      updateColorPremultiplied(shaderProgram, drawState.strokeStyle);
+
       gl.drawArrays(gl.LINE_LOOP, 0, 4);
 
       transform.popMatrix();
@@ -1200,8 +1228,10 @@
 
       sendTransformStack(shaderProgram);
 
-      gl.setVertexColors(shaderProgram);
-      gl.drawArrays(gl.TRIANGLE_FAN, 0, verts.length/4);
+      updateBlendMode();
+      updateColorPremultiplied(shaderProgram, drawState.fillStyle);
+
+      gl.drawArrays(gl.TRIANGLE_FAN, 0, verts.length / 4);
 
       transform.popMatrix();
     }
@@ -1228,7 +1258,9 @@
 
       sendTransformStack(shaderProgram);
 
-      gl.setVertexColors(shaderProgram, true);
+      updateBlendMode();
+      updateColorPremultiplied(shaderProgram, drawState.strokeStyle);
+
 
       if (subPath.closed) {
         gl.drawArrays(gl.LINE_LOOP, 0, verts.length/4);
@@ -1276,23 +1308,68 @@
         image = canvas;
       }
 
+      this.updateCachedImage(image);
+
+    }
+
+
+    Texture.prototype.updateCachedImage = function(image) {
+
       gl.bindTexture(gl.TEXTURE_2D, this.obj);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+      var imagePixels;
+	  if (image.tagName.toLowerCase() === "canvas") {
+	    imagePixels = image.getContext("2d").getImageDate(0, 0, image.width, image.height);
+	  } else {
+	    tempCanvas.width  = image.width;
+		tempCanvas.height = image.height;
+		tempCtx.clearRect(0, 0, image.width, image.height);
+		tempCtx.globalCompositeOperation = "copy";
+		tempCtx.drawImage(image, 0, 0);
+
+        imagePixels = tempCtx.getImageDate(0, 0, image.width, image.height);
+		tempCanvas.width = tempCanvas.height = 1;
+
+	  }
+
+
+      var imagePixelData = imagePixels.data;
+	  var l = imagePixelData.length;
+	  var premultipliedData = new Uint8Array(l);
+
+      for (var i = 0; i < l; i += 4) {
+
+        var a = imagePixelData[i + 3];
+		premultipliedData[i + 3] = a;
+
+        a /= 255;
+		premultipliedData[i + 0] = a * imagePixelData[i + 0];
+		premultipliedData[i + 1] = a * imagePixelData[i + 1];
+		premultipliedData[i + 2] = a * imagePixelData[i + 2];
+
+	  }
+
+      gl.texImage2D(
+	    gl.TEXTURE_2D, 0, gl.RGBA,
+		image.width, image.height, 0, gl.RGBA,
+		gl.UNSIGNED_BYTE, premultipliedData
+	  );
+
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
-      // Enable Mip mapping on power-of-2 textures
-      if (isPOT(image.width) && isPOT(image.height)) {
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-        gl.generateMipmap(gl.TEXTURE_2D);
-      } else {
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      }
 
-      // Unbind texture
+      if (isPOT(image.width) && isPOT(image.height)) {
+	    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+		gl.generateMipmap(gl.TEXTURE_2D);
+	  } else {
+	    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+	  }
+
       gl.bindTexture(gl.TEXTURE_2D, null);
-    }
+
+	};
 
     gl.drawImage = function drawImage(image, a, b, c, d, e, f, g, h) {
       var transform = gl2d.transform;
@@ -1332,6 +1409,9 @@
         texture = new Texture(image);
       }
 
+      updateBlendMode();
+	  gl.uniform4f(shaderProgram.uColor, 1, 1, 1, drawState.globalAlpha);
+
       if (doCrop) {
         gl.uniform4f(shaderProgram.uCropSource, a/image.width, b/image.height, c/image.width, d/image.height);
       }
@@ -1345,7 +1425,6 @@
       gl.uniform1i(shaderProgram.uSampler, 0);
 
       sendTransformStack(shaderProgram);
-      gl.setVertexColors(shaderProgram);
       gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
 
       transform.popMatrix();
