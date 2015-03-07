@@ -1086,7 +1086,7 @@
 
 	};
 
-    function updateColorPremultiplied = function(shaderProgram, colorUnpremultiplied) {
+    updateColorPremultiplied = function(shaderProgram, colorUnpremultiplied) {
 
       gl.uniform4f(
 	    shaderProgram.uColor,
